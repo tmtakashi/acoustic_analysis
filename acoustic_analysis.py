@@ -2,6 +2,9 @@ import numpy as np
 from scipy.signal import firwin
 import soundfile as sf
 
+from tqdm import tqdm
+
+
 def nextpow2(n):
     '''
     Returns the next exponent of base2.
@@ -12,6 +15,7 @@ def nextpow2(n):
     m_i = np.ceil(m_f)
     return int(np.log2(2**m_i))
 
+
 def reference_value(filename):
     '''
     Returns value of the reference.
@@ -20,9 +24,10 @@ def reference_value(filename):
     filename : Name of wav file (str)
     '''
     data, fs = sf.read(filename)
-    calib_e = np.max(data) / np.sqrt(2) #RMS of input signal
-    reference =  10**(-4.7) * calib_e
+    calib_e = np.max(data) / np.sqrt(2)  # RMS of input signal
+    reference = 10**(-4.7) * calib_e
     return reference
+
 
 def thd(data, f0, order):
     '''
@@ -34,11 +39,11 @@ def thd(data, f0, order):
     '''
     # data, fs = sf.read(filename)
     # if data.ndim == 2: data = data[:, 0]
-    
+
     numtaps = 2**nextpow2(len(data))
 
     data = np.r_[data, np.zeros(numtaps - len(data))] * np.hamming(numtaps)
-    
+
     fs = 48000
     powers = np.zeros(order)
     for i in range(order):
@@ -46,12 +51,14 @@ def thd(data, f0, order):
         f1 = (i + 1) * (f0 / 2**(1/6)) / (fs/2)
         f2 = (i + 1) * (f0 * 2**(1/6)) / (fs/2)
         bpf = firwin(numtaps, [f1, f2], pass_zero=False)
-        filtered_spectrum = np.fft.fft(data, numtaps) * np.fft.fft(bpf, numtaps)
+        filtered_spectrum = np.fft.fft(
+            data, numtaps) * np.fft.fft(bpf, numtaps)
         powers[i] = np.max(np.abs(filtered_spectrum))
-    
-    thd = np.sqrt(np.sum((powers[1:order]**2))) / powers[0] 
+
+    thd = np.sqrt(np.sum((powers[1:order]**2))) / powers[0]
 
     return thd
+
 
 def thdn(filename, f0):
     '''
@@ -61,8 +68,9 @@ def thdn(filename, f0):
     f0 : Fundamental frequency (float)
     '''
     data, fs = sf.read(filename)
-    if data.ndim == 2: data = data[:, 0]
-    
+    if data.ndim == 2:
+        data = data[:, 0]
+
     numtaps = 2**nextpow2(len(data))
 
     data = np.r_[data, np.zeros(numtaps - len(data))] * np.hanning(numtaps)
@@ -74,9 +82,47 @@ def thdn(filename, f0):
     filtered_spectrum = data_spectrum * np.fft.fft(bpf, numtaps)
     left_over_spectrum = np.fft.fft(data, numtaps)
 
-    thdn = np.sqrt(np.sum(np.abs(left_over_spectrum))) / np.max(np.abs(filtered_spectrum))
+    thdn = np.sqrt(np.sum(np.abs(left_over_spectrum))) / \
+        np.max(np.abs(filtered_spectrum))
 
-    print(str(f0) + "Hz: " + str(np.round(100*thdn, decimals=2)) + '%, ' + str(np.round(20*np.log10(thdn/100), decimals=2)) + "[dB]")
+    print(str(f0) + "Hz: " + str(np.round(100 * thdn, decimals=2)) +
+          '%, ' + str(np.round(20 * np.log10(thdn / 100), decimals=2)) + "[dB]")
+
+
+def noise_freqresponse(data, freq_range, fs):
+    '''
+    Plots frequency responce of noise responce with 1/3 oct. band filter.
+
+    parameters
+    ---------------------------------
+    data : noise responce of the system(numpy array(float64))
+    freq_range : freqency range to analyse (tuple)
+    '''
+    numtaps = 2 ** nextpow2(len(data))
+    # data = np.r_[data, np.zeros(numtaps - len(data))] * np.hamming(numtaps)
+    data_freq = np.fft.fft(data, numtaps)
+
+    center_frequencies = np.zeros(31)
+    for i in range(31):
+        center_frequencies[i] = ((10**(3/10))**(i/3)) * 20
+    response = np.zeros(len(center_frequencies))
+    print('Analyzing...')
+    for i, f0 in enumerate(tqdm(center_frequencies)):
+        # if f0 == 0:
+        #     f1 = ((f0 + 1) / 2 ** (1 / 6)) / (fs / 2)
+        #     f2 = ((f0+1) * 2 ** (1 / 6)) / (fs / 2)
+        # else:
+        #     f1 = (f0 / 2 ** (1 / 6)) / (fs / 2)
+        #     f2 = (f0 * 2 ** (1 / 6)) / (fs / 2)
+        f1 = (f0 / 2 ** (1 / 6)) / (fs / 2)
+        f2 = (f0 * 2 ** (1 / 6)) / (fs / 2)
+        bpf = firwin(len(data), [f1, f2], pass_zero=False)
+        filtered_spectrum = data_freq * np.fft.fft(bpf, numtaps)
+        response[i] = np.sum(np.abs(filtered_spectrum))
+
+    print('Complete!')
+    return response
+
 
 def plot_directivity(speaker_output_file, pulse_file):
     '''
@@ -112,13 +158,13 @@ def tsp_sychronous_addition(data, repeat, N):
 
     mean = np.zeros(N)
     for i in range(repeat + 1):
-        print(data[i * N : (i + 1) * N].shape)
-        mean = mean + data[i * N : (i + 1) * N]
+        mean = mean + data[i * N: (i + 1) * N]
     mean = mean / repeat
 
     return mean
 
-def sychronous_addition(data, frequency, num_period):
+
+def synchronous_addition(data, frequency, num_period):
     # data, fs = sf.read(filename)
 
     # if data.ndim == 2: data = data[:, 0]
@@ -126,11 +172,11 @@ def sychronous_addition(data, frequency, num_period):
     # tap number of a frame
     N = num_period * fs // frequency
     # numbers of frames
-    frame_num = len(data) // N 
+    frame_num = len(data) // N
 
     mean = np.zeros(N)
     for i in range(frame_num):
-        mean += data[i * N : (i + 1) * N]
+        mean += data[i * N: (i + 1) * N]
     mean /= frame_num
 
-    return mean 
+    return mean
